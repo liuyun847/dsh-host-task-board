@@ -1,0 +1,43 @@
+{
+  "name": "dsh-host-task-board",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 宿主插件：共享任务板（单工具 task_board，协调者预设及其子代理专用；落进宿主领域存储 ctx.storageDomain，跨 dsh 重启存活，服务不可用时降级为内存态）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "zod": "*"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liuyun847/dsh-host-task-board.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "task-board",
+    "agent-coordination"
+  ]
+}

@@ -1,0 +1,85 @@
+# dsh-host-task-board 的 profile 层 patch。
+# 2026-09-25 从 profile 的 cordis.patch.yml 迁入：本包自当日成为组合包(bundle)，
+# 宿主按 profile 的 dsh.profile.bundles 加载本包时应用本文件。
+# ⚠ 本次是**补迁**(2026-09-25 17:13)：当日那场迁移漏了本包 —— profile patch 层的 insert 行被删、
+#   包内无 patch 文件、包名也没进 bundles ⇒ 三处装载入口全无，热重载随即卸载本插件
+#   (宿主日志 <工具目录>\dsh-watchdog-dsh.log 08:51:02Z 只有 dispose、无后续 apply；
+#   调用 task_board 返回 unknown tool)。现按现约定补齐三处：本文件 + 包 package.json 的
+#   dsh.bundle.patch + profile package.json 的 dsh.profile.bundles。
+# 启停：插件页「已安装」里本卡的总开关(写 profile 的 dsh.profile.bundles)，或卡片详情里的
+#   行级开关(向 profile 的 cordis.patch.yml 写 disabled 覆盖)。
+# 行 id `task-board` 是上述开关与 settings 命名空间的寻址键，勿改。
+#
+# ── 与下文旧注释冲突时的两处更正(2026-09-25 实测，冲突时以本段为准)────────────
+#   1. 真正被加载的是 profile\node_modules\dsh-host-task-board 那份：宿主 resolveBundleDir
+#      (dsh-app-boot lib/index.js:900)先解析到 profile 的 node_modules，patch 路径再按**该目录**
+#      拼(bundlePatchPaths，同文件 :507)⇒ 包内本文件必须同样存在于运行副本里，否则整包被
+#      静默跳过(loadProfileDirectory 把失败收进 skippedBundles，不报错)。
+#      本包 4/4 共享文件实测为**硬链接**(同一 inode；`fsutil hardlink list` 两侧同源)
+#      ⇒ 原地改已有文件会同时改到两侧，但**新增文件不会**自动出现。本文件在源目录与运行副本
+#      各一份、互为硬链接。
+#   2. 改**本文件**不会触发热重载：hmr 只盯 profile 的 cordis.patch.yml、$DSH_HOME\cordis.patch.yml
+#      与 profile package.json(且仅当 bundles 变化才动作 —— 动作时会重新从磁盘读整棵树，
+#      故包内 patch 的改动可借"本卡总开关关→开(写 bundles)"搭车生效)。依据:dsh-hmr lib/index.js:353-376。
+#
+# ── 以下为迁移前留在 profile cordis.patch.yml 的原始注释，仅作依据保存 ──────
+# （其中的"生效/回滚"路径已随迁移失效：本行现由包内本文件提供，
+#   回滚请改用插件页总开关，或 dshpm remove dsh-host-task-board。）
+# ⚠ 2026-09-25 新契约落地：下面"语义/硬事实"段里描述**当前行为**的条目已就地改成新口径
+#   (分桶 key 由项目根路径改为根会话 id；增长型上限整体取消；动作补上 remove)，
+#   与 lib\index.js 头部注释一致；已失效的旧表述不再留档。
+# ── 共享任务板 dsh-host-task-board:替代只增不减的 .dsh/.project/context.md ──
+# 语义(2026-09-25 新建,2026-09-26 补存储改造):协调者预设此前拿项目根 `.dsh/.project/context.md`
+#   当工作内存,只增不减(最严重一份 53,746 token)⇒ 改为**共享任务板 + 一个工具 task_board**
+#   (动作 create / list / get / update / remove;只注册一个工具以省常驻 schema)。长期要保留的结论
+#   由人或代理**手动**写进项目 AGENTS.md / README。
+# 硬事实(实现依据,改行为前先读 plugins\dsh-host-task-board\lib\index.js 头部注释):
+#   · 存储分两层:内存(BOARD,模块作用域 Map)是**权威读源**(读全同步);
+#     宿主**领域存储** ctx.storageDomain(域 `task_board` v1 / 表 `boards`,走 profile 已挂的
+#     storage-domain → storage-json 后端)是**持久投影**,每次写先 await 落盘、成功后才改内存
+#     ⇒ 跨工具调用 / 跨会话 / 跨配置热加载 / **dsh 重启**全都存活(重启后 apply 时从介质水合回来)。
+#     ⚠ domain 名是 `task_board`(下划线):宿主 UNIT_NAME_RE = /^[a-z][a-z0-9_]*$/ 不收连字符,
+#       写 `task-board` 会让整个模块在加载期抛错(工具彻底消失)。
+#     ⚠ 降级:拿不到 storageDomain 或打开失败 ⇒ **不抛错、不让整行加载失败**,只打一条警告并退回
+#       纯内存态(旧行为:dsh 重启即空),此时**五个动作的摘要**都会追加同一句"[降级:… 只写内存]"
+#       (create / remove 的 note 另补一句数据在哪、原因看启动日志;正常路径不提存储,也不会出现
+#       "持久态/跨重启存活"这类在降级态下自相矛盾的措辞)。
+#     ⚠ 存储用 ctx.inject(['storageDomain'], cb) **可选**接入(不是 apply 里查一次 ctx.get):
+#       服务缺席 ⇒ 回调不执行(工具照常注册);服务后到 ⇒ 回调补跑;服务热替换 ⇒ 旧域关、新域开;
+#       父插件卸载 ⇒ 子 fiber 的 disposer 一定执行(先 await 打开落定再 close,打开落定处再查一次
+#       是否已卸载)—— 少了这条闸,卸载撞上"域正在打开"会让域句柄泄漏、整进程永久降级为纯内存。
+#       ⇒ **行序不再是硬约束**(本行放在 storage-domain 之前也能靠补跑接上);语义依据见 README
+#       「依赖与行序」。
+#     ⚠ 本模块仍不 import 任何 node:fs(落盘由宿主后端完成);也不新增任何 npm 依赖
+#       (@deepseek-ai/dsh-storage-domain 与 zod 都靠 profile 级 node_modules 的 junction 解析,
+#        与既有的 @deepseek-ai/dsh-tools 同一套机制)。
+#   · 分桶 key = **根会话 id**(2026-09-25 用户决定,取代"规范化项目根绝对路径"与 header.cwd):
+#     同一顶层会话及其任意深度的派生会话共用一块板,换新对话即新板,会话分叉也共用一块;
+#     上溯只走会话头 parentSession 父链、只查内存活对象,解析失败回退调用者自己的会话 id。
+#     **没有 project 参数**;分桶与 cwd / 路径全无关系(node:path 也不再需要)。
+#   · update / remove 用 expected_revision 做乐观锁(CAS),版本过期即拒并回**最新 revision**。
+#   · ready = blocked_by 里**仍在板上**的 id 全部 completed;已不在板上的 id **不算阻塞**,
+#     只在 missingBlockers 与摘要里如实提示(旧实现把"不存在"当阻塞,会令下游永久卡死)。
+#   · 上限治理(2026-09-25 用户决定后只剩"单字段输入上限",超限**拒绝**不截断):
+#     description 8,192 B / subject 200 B / blocked_by 16 条 / write_scopes 8 条;
+#     **增长型上限(每板任务数、板子数量)已整体删除**(挡不住正常使用,没有收益)。
+#     取值理由逐条写在 lib/index.js 的 LIMITS 注释里;每个都可用本行 config 覆盖(本行未设)。
+#   · 返回字段随语义改名:project→boardKey、projects+maxProjects→boards、
+#     bucketRemoved→boardRemoved、limits→counts。
+# 角色门:只对**协调者预设**的会话及其子代理开放 —— 判据 = 会话 header.agentPreset ===
+#   `coordinator`(preset id 出处:plugins\dsh-agent-preset-coordinator\presets\
+#   coordinator.patch.yml:52 的 `id: coordinator`),子代理继承父会话的 agentPreset
+#   ⇒ 一个判据同时覆盖两者。其它预设的会话调用时返回明确拒绝信息(不抛错)。
+# 生效:本行 insert 在**包内** cordis.patch.yml,dsh-hmr 只盯三处输入(profile 的
+#   cordis.patch.yml、$DSH_HOME\cordis.patch.yml、profile 的 package.json)⇒ 改包内这份不
+#   热生效;两条搭车路径:保存 profile 自己的 cordis.patch.yml(内容一变即重读整棵树,重读会把
+#   包内 patch 一并带进来),或"插件页总开关关→开"(写 bundles 搭车重读);代码另需重启。
+# ⚠ 改 lib/*.js 的正确流程:真正被加载的是 node_modules\dsh-host-task-board 那份 ⇒
+#   file: 依赖在 pnpm 下默认建硬链接，但**逐文件实测，别一概而论**(本包 4/4 共享文件同 inode;
+#   而 dsh-host-restart 4/4 拷贝、peak-valley 6 个文件里 2 个硬链接)⇒ 改完核 fileId/SHA256;新增文件见 README。
+# 回滚:删本注释块 + 下面这个 insert 条目(热卸载,task_board 立即消失)+
+#   node <dshpm.mjs 路径> remove dsh-host-task-board --profile <profile 名>
+#   + 删 plugins\dsh-host-task-board 与 node_modules\dsh-host-task-board。
+- insert:
+    - id: task-board
+      name: 'dsh-host-task-board'
