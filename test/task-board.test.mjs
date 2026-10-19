@@ -902,7 +902,9 @@ export async function run() {
   assert.equal(TOOL_DESCRIPTION.includes('tasks per project'), false)
   assert.equal(TOOL_DESCRIPTION.includes('project buckets'), false)
   assert.match(TOOL_DESCRIPTION, /ROOT session id/, '描述要写明板键 = 根会话 id')
-  assert.match(TOOL_DESCRIPTION, /NO growth/, '描述要写明没有增长型上限')
+  // 2026-10-12 描述瘦身：“没有增长型上限”已移出模型侧描述（机制全文见包内 README）——
+  // 描述层只钉“模型调用必需的硬事实”，这条口径随描述一起撤掉，判定改由 README §怎么用 承担。
+
   // 12c) 行为:老调用方多传的 project 会被忽略,绝不参与分桶(defineTool 容忍多余键)
   const contractTask = await call(state, { action: 'create', subject: '契约用例' }, ROOT)
   assert.equal(contractTask.boardKey, 's-root')
